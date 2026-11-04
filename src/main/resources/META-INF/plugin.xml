@@ -1,0 +1,68 @@
+
+<idea-plugin>
+    <version>1.0.0</version>
+    <id>com.airmour.markmap</id>
+    <name>Markmap Jet</name>
+    <vendor email="airmour@foxmail.com" url="https://github.com/Airmour/Markmap-Jet">Airmour</vendor>
+    <description><![CDATA[
+        <p><strong>Transform your Markdown documents into interactive mind maps!</strong></p>
+
+        <p>Markmap Jet brings visual thinking to your Markdown workflow. See your document structure as an interactive mind map that updates as you type.</p>
+
+        <h3>✨ Key Features</h3>
+        <ul>
+            <li>🧠 <strong>Interactive Mind Map Visualization</strong> - Transform Markdown structure into beautiful mind maps</li>
+            <li>🎨 <strong>Theme Integration</strong> - Automatically follows your IDE's light/dark theme</li>
+            <li>⚡ <strong>Real-time Updates</strong> - See changes instantly as you type</li>
+            <li>🔍 <strong>Zoom & Pan Controls</strong> - Navigate large mind maps with ease</li>
+            <li>📱 <strong>Flexible View Modes</strong> - Editor only, Split view, or Preview only</li>
+            <li>🎯 <strong>Center & Fit</strong> - Quickly navigate and focus your mind map</li>
+            <li>🖱️ <strong>Interactive Nodes</strong> - Click to expand/collapse branches</li>
+            <li>📦 <strong>Offline Preview</strong> - Render diagrams and formulas without a CDN</li>
+            <li>📤 <strong>Export</strong> - Save diagrams as SVG or standalone HTML</li>
+            <li>🔗 <strong>Editor Navigation</strong> - Follow the caret and double-click nodes to find their source</li>
+            <li>⚙️ <strong>Customization</strong> - Configure default options and custom CSS</li>
+        </ul>
+
+        <h3>🚀 How to Use</h3>
+        <ol>
+            <li>Open any Markdown (.md) file</li>
+            <li>Use the toolbar buttons to switch between view modes</li>
+            <li>Your Markdown headings become mind map nodes automatically</li>
+            <li>Use zoom controls for better navigation</li>
+            <li>Click nodes to expand/collapse sections</li>
+        </ol>
+
+        <h3>💡 Perfect For</h3>
+        <ul>
+            <li>Documentation writers and technical authors</li>
+            <li>Students organizing study notes</li>
+            <li>Project managers planning and structuring content</li>
+            <li>Anyone who thinks visually!</li>
+        </ul>
+
+        <br/>
+        <p><em>Powered by the excellent Markmap library for beautiful, interactive mind maps.</em></p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>🎉 Version 1.0.0 - Initial Release</h3>
+        <ul>
+            <li>✨ Interactive mind map preview for Markdown files</li>
+            <li>🎨 Theme-aware UI with automatic light/dark mode switching</li>
+            <li>📱 Three flexible view modes: Editor, Split, Preview</li>
+            <li>🔍 Zoom in/out and center controls for easy navigation</li>
+            <li>⚡ Real-time preview updates as you type</li>
+            <li>🖱️ Click-to-expand/collapse node functionality</li>
+            <li>🎯 Smooth animations and transitions</li>
+        </ul>
+    ]]></change-notes>
+
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.intellij.plugins.markdown</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <fileEditorProvider implementation="com.airmour.markmap.editor.MarkmapEditorProvider"/>
+    </extensions>
+</idea-plugin>
