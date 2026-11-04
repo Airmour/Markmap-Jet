@@ -1,4 +1,7 @@
 ## Changelog
+### 1.0.1
+- Updated the Markmap Jet plugin icon
+
 ### 1.0.0
 - Initial release
 - Interactive mind map preview for Markdown files

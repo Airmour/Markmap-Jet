@@ -1,6 +1,6 @@
 
 <idea-plugin>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <id>com.airmour.markmap</id>
     <name>Markmap Jet</name>
     <vendor email="airmour@foxmail.com" url="https://github.com/Airmour/Markmap-Jet">Airmour</vendor>
@@ -46,6 +46,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>Version 1.0.1</h3>
+        <ul>
+            <li>Updated the Markmap Jet plugin icon</li>
+        </ul>
         <h3>🎉 Version 1.0.0 - Initial Release</h3>
         <ul>
             <li>✨ Interactive mind map preview for Markdown files</li>
