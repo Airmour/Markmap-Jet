@@ -1,1 +1,1 @@
-rootProject.name = "markmap"
+rootProject.name = "Markmap-Jet"

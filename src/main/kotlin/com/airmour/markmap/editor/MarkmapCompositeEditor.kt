@@ -147,7 +147,7 @@ class MarkmapCompositeEditor(
         // Mind map controls - only show when preview is visible (simplified to working controls only)
         if (currentMode == ViewMode.SPLIT || currentMode == ViewMode.PREVIEW_ONLY) {
             // Center/Fit action
-            actionGroup.add(object : AnAction("Center View", "Center and fit the mind map", AllIcons.Graph.ActualZoom),
+            actionGroup.add(object : AnAction("Center View", "将整张导图居中并调整到完整显示", AllIcons.Graph.ActualZoom),
                 DumbAware {
                 override fun actionPerformed(e: AnActionEvent) {
                     executeJavaScript("if (typeof centerMap === 'function') centerMap();")
@@ -215,7 +215,7 @@ class MarkmapCompositeEditor(
 
     private fun chooseExport(extension: String): File? {
         val dialog = FileChooserFactory.getInstance().createSaveFileDialog(
-            FileSaverDescriptor("Export Markmap", "Save the mind map", extension), mainPanel
+            FileSaverDescriptor("Export Markmap", "Save the mind map", extension as String?), mainPanel
         )
         return dialog.save(textEditor.file.parent, "${textEditor.file.nameWithoutExtension}.$extension")?.file
     }

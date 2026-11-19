@@ -39,9 +39,9 @@ markmap:
 
 ## 环境与构建
 
-插件声明支持 IntelliJ Platform 2023.3（build 233）及以上版本，并依赖 IDE 的 Markdown 插件和 JCEF。声明的兼容范围不等同于所有 IDE 均已完成实测。
+插件声明支持 IntelliJ Platform 2025.3（build 253）及以上版本，并依赖 IDE 的 Markdown 插件和 JCEF。Android Studio 以“关于”页面的 AI build 号为准，需要 253 或以上；产品版本号不等同于 IntelliJ Platform 版本。声明的兼容范围不等同于所有 IDE 均已完成实测。
 
-使用 JDK 17 构建：
+使用 JDK 25 构建，插件输出的 Java 字节码目标为 Java 21：
 
 ```shell
 ./gradlew buildPlugin

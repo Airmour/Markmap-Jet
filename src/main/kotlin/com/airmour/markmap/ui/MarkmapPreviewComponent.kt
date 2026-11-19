@@ -9,7 +9,9 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
-import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.ui.components.Magnificator
+import com.intellij.ui.components.ZoomableViewport
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -22,9 +24,39 @@ import java.nio.file.Paths
 import java.util.Collections
 import java.util.Base64
 import javax.swing.JComponent
+import javax.swing.JPanel
+import java.awt.BorderLayout
+import java.awt.Point
 
 class MarkmapPreviewComponent(private val project: Project, private val file: VirtualFile, private val onFocusLine: (Int) -> Unit) {
     private val browser = JBCefBrowser()
+    private val previewPanel = object : JPanel(BorderLayout()), ZoomableViewport {
+        private var pinching = false
+
+        init { add(browser.component, BorderLayout.CENTER) }
+
+        // IDE gesture dispatch discovers ZoomableViewport ancestors with a Magnificator.
+        override fun getMagnificator(): Magnificator = Magnificator { _, point -> point }
+
+        override fun magnificationStarted(at: Point) {
+            if (!ready || disposed || width <= 0 || height <= 0) return
+            pinching = true
+            executeJavaScript("window.beginNativePinch(${at.x.toDouble() / width}, ${at.y.toDouble() / height});")
+        }
+
+        override fun magnify(magnification: Double) {
+            if (!pinching || !magnification.isFinite()) return
+            val scale = if (magnification >= 0) 1 + magnification else 1 / (1 - magnification)
+            executeJavaScript("window.updateNativePinch($scale);")
+        }
+
+        override fun magnificationFinished(magnification: Double) {
+            if (!pinching) return
+            magnify(magnification)
+            executeJavaScript("window.endNativePinch();")
+            pinching = false
+        }
+    }
     private val query = JBCefJSQuery.create(browser as JBCefBrowserBase)
     private val imageQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
     private val imageCache = Collections.synchronizedMap(mutableMapOf<String, String>())
@@ -34,6 +66,7 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
     private var disposed = false
     private var content = ""
     private var cursorLine = 0
+    private var lastSentCursorLine: Int? = null
     private var svgCallback: ((String) -> Unit)? = null
     private var htmlCallback: ((String) -> Unit)? = null
 
@@ -76,6 +109,7 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
     private fun reload() {
         if (disposed) return
         ready = false
+        lastSentCursorLine = null
         val bridge = """
             window.markmapSend = function(message) { ${query.inject("JSON.stringify(message)")} };
             window.markmapResolveImage = function(src) { return new Promise(resolve => {
@@ -97,6 +131,8 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
 
     fun updateCursor(line: Int) {
         cursorLine = line
+        if (!ready || disposed || lastSentCursorLine == line) return
+        lastSentCursorLine = line
         executeJavaScript("window.setMarkmapCursor($line);")
     }
 
@@ -144,7 +180,7 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
         } else if (uri.scheme == null) {
             val path = localPath(href) ?: return
             LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)?.let {
-                FileEditorManager.getInstance(project).openFile(it, true)
+                OpenFileDescriptor(project, it).navigate(true)
             }
         }
     }
@@ -153,8 +189,8 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
         if (ready && !disposed) browser.cefBrowser.executeJavaScript(script, browser.cefBrowser.url, 0)
     }
 
-    fun getComponent(): JComponent = browser.component
-    fun getBrowserComponent(): JComponent = browser.component
+    fun getComponent(): JComponent = previewPanel
+    fun getBrowserComponent(): JComponent = previewPanel
     fun dispose() {
         disposed = true
         connection.disconnect()

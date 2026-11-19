@@ -1,6 +1,6 @@
 
 <idea-plugin>
-    <version>1.0.1</version>
+    <version>1.0.5</version>
     <id>com.airmour.markmap</id>
     <name>Markmap Jet</name>
     <vendor email="airmour@foxmail.com" url="https://github.com/Airmour/Markmap-Jet">Airmour</vendor>
@@ -46,6 +46,30 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>Version 1.0.5</h3>
+        <ul>
+            <li>Forward native macOS trackpad pinch gestures to the preview, preserving the zoom anchor</li>
+            <li>Apply two-finger pan events immediately and interrupt competing viewport animations</li>
+            <li>Keep the icon-only Center View action with a clearer center-and-fit tooltip</li>
+        </ul>
+        <h3>Version 1.0.4</h3>
+        <ul>
+            <li>Support IntelliJ Platform 2025.3 and later with Java 21 and Kotlin 2.2 compatibility</li>
+            <li>Use compatible file navigation and support both bundled and standalone JCEF</li>
+        </ul>
+        <h3>Version 1.0.3</h3>
+        <ul>
+            <li>Coalesce rapid edits and discard outdated preview updates</li>
+            <li>Reduce redundant cursor highlighting and viewport movement</li>
+            <li>Parse Markdown once per update while preserving mixed lists, code blocks, and source line mapping</li>
+        </ul>
+        <h3>Version 1.0.2</h3>
+        <ul>
+            <li>Require IntelliJ Platform 2026.3 or later</li>
+            <li>Preserve list items alongside code blocks under the same heading</li>
+            <li>Update file saving and file opening API calls</li>
+            <li>Update IntelliJ IDEA 2026.3 build tooling and JCEF dependencies</li>
+        </ul>
         <h3>Version 1.0.1</h3>
         <ul>
             <li>Updated the Markmap Jet plugin icon</li>
@@ -65,6 +89,7 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.intellij.plugins.markdown</depends>
+    <depends optional="true" config-file="com.airmour.markmap-jcef.xml">com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <fileEditorProvider implementation="com.airmour.markmap.editor.MarkmapEditorProvider"/>
