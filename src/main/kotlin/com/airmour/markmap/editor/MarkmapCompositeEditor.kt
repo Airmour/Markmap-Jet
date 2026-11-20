@@ -167,26 +167,49 @@ class MarkmapCompositeEditor(
                     executeJavaScript("if (typeof zoomOut === 'function') zoomOut();")
                 }
             })
-            actionGroup.add(object : AnAction("Toggle Active Node", "Toggle the node at the editor cursor", AllIcons.General.CollapseComponent), DumbAware {
+            val levels = DefaultActionGroup("Level", true)
+            levels.templatePresentation.description = "选择导图展开层级（根节点为 Level 0）"
+            for (level in 0..6) {
+                levels.add(object : AnAction("Level $level"), DumbAware {
+                    override fun actionPerformed(e: AnActionEvent) = executeJavaScript("window.setFoldLevel($level);")
+                })
+            }
+            levels.addSeparator()
+            levels.add(object : AnAction("Expand All"), DumbAware {
+                override fun actionPerformed(e: AnActionEvent) = executeJavaScript("window.setFoldLevel(null);")
+            })
+            actionGroup.add(levels)
+            actionGroup.add(object : AnAction("Toggle Active Node", "Toggle the selected node or the node at the editor cursor", AllIcons.General.CollapseComponent), DumbAware {
                 override fun actionPerformed(e: AnActionEvent) = executeJavaScript("window.toggleActive(false);")
             })
-            actionGroup.add(object : AnAction("Toggle Node Recursively", "Toggle the active node and descendants", AllIcons.Actions.Collapseall), DumbAware {
+            actionGroup.add(object : AnAction("Toggle Node Recursively", "Fold or expand all descendants while keeping the selected node open", AllIcons.Actions.Collapseall), DumbAware {
                 override fun actionPerformed(e: AnActionEvent) = executeJavaScript("window.toggleActive(true);")
             })
-            actionGroup.add(object : AnAction("Export SVG", "Export the current mind map as SVG", AllIcons.ToolbarDecorator.Export), DumbAware {
+            val exports = DefaultActionGroup("Export", true)
+            exports.templatePresentation.icon = AllIcons.ToolbarDecorator.Export
+            exports.templatePresentation.description = "Export the current mind map"
+            exports.add(object : AnAction("Export SVG", "Export the current mind map as SVG", null), DumbAware {
                 override fun actionPerformed(e: AnActionEvent) {
                     val target = chooseExport("svg") ?: return
                     previewComponent.updateContent(textEditor.editor.document.text)
                     previewComponent.exportSvg { writeExport(target, it) }
                 }
             })
-            actionGroup.add(object : AnAction("Export HTML", "Export a self-contained interactive mind map", AllIcons.ToolbarDecorator.Export), DumbAware {
+            exports.add(object : AnAction("Export PNG", "Export the current mind map as PNG", null), DumbAware {
+                override fun actionPerformed(e: AnActionEvent) {
+                    val target = chooseExport("png") ?: return
+                    previewComponent.updateContent(textEditor.editor.document.text)
+                    previewComponent.exportPng { writeExport(target, it) }
+                }
+            })
+            exports.add(object : AnAction("Export HTML", "Export a self-contained interactive mind map", null), DumbAware {
                 override fun actionPerformed(e: AnActionEvent) {
                     val target = chooseExport("html") ?: return
                     previewComponent.updateContent(textEditor.editor.document.text)
                     previewComponent.exportHtml { writeExport(target, it) }
                 }
             })
+            actionGroup.add(exports)
             actionGroup.add(object : AnAction("Markmap Settings", "Edit default options and custom CSS", AllIcons.General.Settings), DumbAware {
                 override fun actionPerformed(e: AnActionEvent) {
                     if (MarkmapSettingsDialog().showAndGet()) previewComponent.updateContent(textEditor.editor.document.text)
@@ -222,6 +245,11 @@ class MarkmapCompositeEditor(
 
     private fun writeExport(file: File, content: String) {
         try { file.writeText(content, Charsets.UTF_8) }
+        catch (e: Exception) { Messages.showErrorDialog(mainPanel, e.message ?: "Cannot write file", "Markmap Export") }
+    }
+
+    private fun writeExport(file: File, content: ByteArray) {
+        try { file.writeBytes(content) }
         catch (e: Exception) { Messages.showErrorDialog(mainPanel, e.message ?: "Cannot write file", "Markmap Export") }
     }
 

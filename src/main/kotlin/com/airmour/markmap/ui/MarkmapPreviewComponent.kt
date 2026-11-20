@@ -12,6 +12,7 @@ import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.ui.components.Magnificator
 import com.intellij.ui.components.ZoomableViewport
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
@@ -68,6 +69,7 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
     private var cursorLine = 0
     private var lastSentCursorLine: Int? = null
     private var svgCallback: ((String) -> Unit)? = null
+    private var pngCallback: ((ByteArray) -> Unit)? = null
     private var htmlCallback: ((String) -> Unit)? = null
 
     init {
@@ -81,6 +83,16 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
                         "ready" -> { ready = true; updateContent(content); updateCursor(cursorLine) }
                         "focus" -> value?.asInt?.let(onFocusLine)
                         "svg" -> { val callback = svgCallback; svgCallback = null; value?.asString?.let { callback?.invoke(it) } }
+                        "png" -> {
+                            val callback = pngCallback
+                            pngCallback = null
+                            try { if (callback != null && value != null) callback(Base64.getDecoder().decode(value.asString)) }
+                            catch (e: Exception) { Messages.showErrorDialog(previewPanel, e.message ?: "Cannot read PNG", "Markmap Export") }
+                        }
+                        "exportError" -> {
+                            pngCallback = null
+                            Messages.showErrorDialog(previewPanel, value?.asString ?: "Cannot export PNG", "Markmap Export")
+                        }
                         "htmlReady" -> {
                             val callback = htmlCallback
                             htmlCallback = null
@@ -140,6 +152,12 @@ class MarkmapPreviewComponent(private val project: Project, private val file: Vi
         if (!ready) return
         svgCallback = callback
         executeJavaScript("window.exportSvg();")
+    }
+
+    fun exportPng(callback: (ByteArray) -> Unit) {
+        if (!ready) return
+        pngCallback = callback
+        executeJavaScript("window.exportPng();")
     }
 
     fun exportHtml(callback: (String) -> Unit) {

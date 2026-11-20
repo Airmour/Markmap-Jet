@@ -1,239 +1,137 @@
 (() => {
     'use strict';
+    const hasBridge = typeof window.markmapSend === 'function';
     const send = window.markmapSend || (() => {});
     const error = document.getElementById('error');
-    let root;
-    let active;
-    let activeLine = 0;
-    let resolvedImages = new Set();
-    let renderedDocument = { content: '', options: {}, customCSS: '' };
-    let firstRender = true;
-    let rendering = Promise.resolve();
-    let pendingContent;
-    let pendingCursor;
-    let contentVersion = 0;
-    let updatesScheduled = false;
-    let cursorFrame;
-    let highlightedNode;
-    let revealedNode;
-    let parsedHtml = '';
-    const transformer = new markmap.Transformer();
-    // Reuse exactly the HTML rendered by transform(), including frontmatter offsets.
-    const renderMarkdown = transformer.md.render.bind(transformer.md);
-    transformer.md.render = (...args) => {
-        parsedHtml = renderMarkdown(...args);
-        return parsedHtml;
+    const svg = document.getElementById('markmap-svg');
+    const selection = d3.select(svg);
+    const rgb = getComputedStyle(document.body).backgroundColor.match(/\d+/g)?.map(Number) || [255, 255, 255];
+    const dark = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000 < 128;
+    const baseOptions = {
+        wrapWidth: 350, duration: 300, colorScheme: dark ? 'dark' : 'light',
+        plugins: [...markmap.defaultContentPlugins, markmap.mathContent],
     };
-    const map = markmap.Markmap.create(document.getElementById('markmap-svg'), {
-        maxWidth: 300, initialExpandLevel: -1, duration: 300, fitRatio: 0.95, scrollForPan: false,
-    });
-    // Dampen momentum where the browser exposes it; preserve pinch-wheel scaling.
-    map.zoom.wheelDelta(event => -event.deltaY
+    const map = markmap.Markmap.create(svg, undefined, baseOptions);
+    map.zoomBehavior.wheelDelta(event => -event.deltaY
         * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002)
         * (event.ctrlKey ? 10 : event.momentum === true ? 1.2 : 2.4));
+    let root, active, highlighted, currentContent = '', images = new Set();
+    let renderedDocument = { content: '', options: {}, customCSS: '' };
+    let firstRender = true, activeLine = 0, contentVersion = 0;
+    let rendering = Promise.resolve(), pendingContent, pendingCursor, updatesScheduled = false, cursorFrame;
+    let pinch, pinchTransform, viewportFrame, suppressPinchWheelUntil = 0;
 
-    const svgElement = document.getElementById('markmap-svg');
-    let viewportFrame;
-    let pinch;
-    let pinchTransform;
-    let suppressPinchWheelUntil = 0;
-
+    // Keep native macOS pinch anchored under the gesture, using the view's public zoom behavior.
     function flushViewport() {
         viewportFrame = undefined;
         if (!pinchTransform) return;
         const transform = pinchTransform;
         pinchTransform = undefined;
-        // Direct manipulation must not wait for an earlier fit/reveal transition.
-        map.svg.interrupt().call(map.zoom.transform, transform);
+        selection.interrupt().call(map.zoomBehavior.transform, transform);
     }
     function scheduleViewport() {
         if (viewportFrame === undefined) viewportFrame = requestAnimationFrame(flushViewport);
     }
     window.beginNativePinch = (x, y) => {
-        if (!map.options.zoom || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        // Finish the previous gesture before capturing the new initial transform.
+        if (map.options.zoom === false || !Number.isFinite(x) || !Number.isFinite(y)) return;
         flushViewport();
-        pinch = { base: d3.zoomTransform(svgElement), x: x * svgElement.clientWidth, y: y * svgElement.clientHeight };
+        pinch = { base: d3.zoomTransform(svg), x: x * svg.clientWidth, y: y * svg.clientHeight };
     };
     window.updateNativePinch = factor => {
-        if (!pinch || !map.options.zoom || !Number.isFinite(factor) || factor <= 0) return;
+        if (!pinch || map.options.zoom === false || !Number.isFinite(factor) || factor <= 0) return;
         const { base, x, y } = pinch;
-        const [min, max] = map.zoom.scaleExtent();
+        const [min, max] = map.scaleLimits;
         const scale = Math.max(Math.max(min, Number.EPSILON), Math.min(max, base.k * factor));
         const ratio = scale / base.k;
         pinchTransform = d3.zoomIdentity.translate(x - (x - base.x) * ratio, y - (y - base.y) * ratio).scale(scale);
         scheduleViewport();
     };
-    window.endNativePinch = () => {
-        pinch = undefined;
-        // Some JCEF versions also emit ctrl+wheel at the end of a native gesture.
-        suppressPinchWheelUntil = Date.now() + 200;
-    };
-    svgElement.addEventListener('wheel', event => {
+    window.endNativePinch = () => { pinch = undefined; suppressPinchWheelUntil = Date.now() + 200; };
+    svg.addEventListener('wheel', event => {
         if (event.ctrlKey) {
             if (pinch || Date.now() < suppressPinchWheelUntil) {
-                event.preventDefault();
-                event.stopImmediatePropagation();
+                event.preventDefault(); event.stopImmediatePropagation();
             }
-            return; // Let D3 handle browser-generated pinch events when no native gesture is active.
+            return;
         }
-        if (!map.options.pan || !map.options.scrollForPan) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (pinch) return;
-        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? svgElement.clientHeight : 1;
-        if (!event.deltaX && !event.deltaY) return;
-        flushViewport();
-        const current = d3.zoomTransform(svgElement);
-        // Match D3's drag path: update immediately instead of adding another frame of latency.
-        map.svg.interrupt().call(map.zoom.transform, current.translate(
-            -event.deltaX * unit / current.k,
-            -event.deltaY * unit / current.k,
-        ));
     }, { capture: true, passive: false });
 
-    async function resolveImages(node, images) {
+    function walk(node, fn) {
         if (!node) return;
-        if (node.content) node.content = window.markmapSanitize(node.content);
-        if (node.content?.includes('<img')) {
-            const container = document.createElement('div');
-            container.innerHTML = node.content;
-            await Promise.all([...container.querySelectorAll('img')].map(async img => {
-                const src = img.getAttribute('src');
-                if (!src || /^(?:https?:|data:)/i.test(src)) return;
+        fn(node);
+        node.children?.forEach(child => walk(child, fn));
+    }
+    async function resolveImages(tree, found) {
+        const pending = [];
+        function visit(value) {
+            if (!value || typeof value !== 'object') return;
+            if (value.type === 'image' && typeof value.url === 'string') {
+                const src = value.url;
+                if (/^(?:https?:|data:image\/)/i.test(src)) return;
                 if (!/^(?:[a-z][\w+.-]*:|\/\/|\/|\\)/i.test(src) && window.markmapResolveImage) {
-                    const resolved = await window.markmapResolveImage(src);
-                    if (resolved) {
-                        img.setAttribute('src', resolved);
-                        images.add(src);
-                        return;
-                    }
-                }
-                img.removeAttribute('src');
-            }));
-            node.content = container.innerHTML;
+                    pending.push(Promise.resolve(window.markmapResolveImage(src)).then(resolved => {
+                        value.url = resolved || '';
+                        if (resolved) found.add(src);
+                    }));
+                } else value.url = '';
+                return;
+            }
+            for (const child of Object.values(value)) {
+                if (Array.isArray(child)) child.forEach(visit);
+                else if (child && typeof child === 'object') visit(child);
+            }
         }
-        await Promise.all((node.children || []).map(child => resolveImages(child, images)));
+        visit(tree);
+        await Promise.all(pending);
     }
-
-    function foldState(node, key, result) {
-        if (!node) return;
-        result.set(key, node.payload?.fold);
-        node.children?.forEach((child, i) => foldState(child, `${key}/${i}:${child.content}`, result));
-    }
-    function applyFoldState(node, key, state) {
-        if (!node) return;
-        if (state.has(key) && state.get(key) !== undefined) {
-            node.payload = node.payload || {};
-            node.payload.fold = state.get(key);
+    function offsetForLine(line) {
+        if (line <= 0) return 0;
+        let offset = 0;
+        for (let i = 0; i < line; i++) {
+            const next = currentContent.indexOf('\n', offset);
+            if (next < 0) return currentContent.length;
+            offset = next + 1;
         }
-        node.children?.forEach((child, i) => applyFoldState(child, `${key}/${i}:${child.content}`, state));
-    }
-    function restoreListItems(root, html) {
-        const parsed = new DOMParser().parseFromString(html, 'text/html');
-        const headings = [];
-        function collectHeadings(node) {
-            if (/^h[1-6]$/.test(node.payload?.tag || '')) headings.push(node);
-            node.children?.forEach(collectHeadings);
-        }
-        collectHeadings(root);
-
-        const lineStart = element => Number(element.getAttribute('data-lines')?.split(',')[0]);
-        parsed.querySelectorAll('ol, ul').forEach(list => {
-            if (list.parentElement?.closest('li')) return;
-            const listLine = lineStart(list);
-            const heading = headings
-                .filter(node => Number(node.payload.lines.split(',')[0]) < listLine)
-                .at(-1);
-            if (!heading) return;
-
-            const items = [...list.children].filter(child => child.tagName === 'LI');
-            const firstItemLine = items.length ? lineStart(items[0]) : listLine;
-            const existing = heading.children || (heading.children = []);
-            const alreadyRepresented = existing.some(node => {
-                const [start] = String(node.payload?.lines || '').split(',').map(Number);
-                return node.payload?.tag === 'li' && start === firstItemLine;
-            });
-            if (alreadyRepresented) return;
-
-            items.forEach((item, index) => {
-                const text = item.cloneNode(true);
-                text.querySelectorAll('ol, ul').forEach(nested => nested.remove());
-                const value = text.textContent.trim();
-                if (!value) return;
-                const number = list.tagName === 'OL'
-                    ? Number(list.getAttribute('start') || 1) + index
-                    : null;
-                const [start, end] = (item.getAttribute('data-lines') || '').split(',').map(Number);
-                existing.push({
-                    content: number === null ? value : `${number}. ${value}`,
-                    children: [],
-                    payload: { tag: 'li', lines: `${start},${end}` },
-                });
-            });
-            existing.sort((a, b) => {
-                const lineA = Number(String(a.payload?.lines || '').split(',')[0]);
-                const lineB = Number(String(b.payload?.lines || '').split(',')[0]);
-                return lineA - lineB;
-            });
-        });
+        return offset;
     }
     function findNode(line) {
-        let found;
-        function visit(node, parents) {
-            const [start, end] = String(node.payload?.lines || '').split(',').map(Number);
-            if (Number.isFinite(start) && Number.isFinite(end) && start <= line && line < end) {
-                found = { node, parents };
-            }
-            node.children?.forEach(child => visit(child, [...parents, node]));
-        }
-        if (root) visit(root, []);
-        return found;
+        const startOfLine = offsetForLine(line);
+        const nextNewline = currentContent.indexOf('\n', startOfLine);
+        const offset = nextNewline < 0 ? currentContent.length : nextNewline;
+        let found, best = -1;
+        walk(root, node => {
+            const start = node.position?.start;
+            if (Number.isInteger(start) && start <= offset && start >= best) { best = start; found = node; }
+        });
+        return found || root;
     }
-    function findHeading(fragment) {
-        let wanted;
-        try { wanted = decodeURIComponent(fragment).toLowerCase(); } catch (_) { return; }
-        let result;
-        function visit(node, parents) {
-            if (result) return;
-            if (/^h[1-6]$/.test(node.payload?.tag || '')) {
-                const element = document.createElement('div');
-                element.innerHTML = node.content;
-                const id = element.textContent.trim().toLowerCase()
-                    .replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
-                if (id === wanted) result = { node, parents };
-            }
-            node.children?.forEach(child => visit(child, [...parents, node]));
-        }
-        if (root) visit(root, []);
-        return result;
+    function lineForNode(node) {
+        if (!node?.position) return undefined;
+        return (currentContent.slice(0, node.position.start).match(/\n/g) || []).length;
     }
-    async function selectLine(line, reveal = false) {
-        const match = findNode(line);
-        active = match?.node;
-        if (match && reveal && active !== revealedNode) {
-            let changed = false;
-            match.parents.forEach(node => { if (node.payload?.fold) { node.payload.fold = 0; changed = true; } });
-            if (changed) await map.renderData();
-            if (activeLine !== line || pendingContent) return;
-            await map.ensureVisible(active);
-            revealedNode = active;
-        }
-        if (active !== highlightedNode) {
-            await map.setHighlight(active);
-            highlightedNode = active;
-        }
+    function markActive() {
+        svg.querySelectorAll('[data-markmap-active]').forEach(el => el.removeAttribute('data-markmap-active'));
+        if (!active) return;
+        svg.querySelectorAll('[data-key^="node:"]').forEach(el => {
+            if (el.getAttribute('data-node-id') === active.id) el.setAttribute('data-markmap-active', '');
+        });
+    }
+    map.on('render', markActive);
+    function selectLine(line, reveal = false) {
+        active = findNode(line);
+        if (reveal && active && active.id !== highlighted) map.focusNode(active.id);
+        highlighted = active?.id;
+        markActive();
     }
     async function renderContent({ content, options, customCSS, version }) {
         if (!content.trim()) {
-            root = undefined;
-            active = undefined;
-            highlightedNode = undefined;
-            revealedNode = undefined;
-            resolvedImages = new Set();
-            map.state.data = undefined;
-            map.state.highlight = undefined;
-            map.g.selectAll('*').remove();
+            root = active = undefined;
+            highlighted = undefined;
+            currentContent = content;
+            images = new Set();
+            map.setTree({ id: '__empty__', type: 'heading', content: [], notes: [], data: {}, children: [] },
+                { ...baseOptions, duration: 0 });
+            map.backend.draw([]);
             renderedDocument = { content, options, customCSS };
             firstRender = true;
             error.textContent = '';
@@ -241,31 +139,21 @@
         }
         if (content === renderedDocument.content && customCSS === renderedDocument.customCSS
             && JSON.stringify(options) === JSON.stringify(renderedDocument.options)) return;
-        const folded = new Map();
-        foldState(root, 'root', folded);
-        const result = transformer.transform(content);
-        const nextRoot = result.root;
-        restoreListItems(nextRoot, parsedHtml);
-        const images = new Set();
-        await resolveImages(nextRoot, images);
-        // Work already in progress cannot always be cancelled; never commit stale preparation.
+        const result = markmap.parse(content, { plugins: [markmap.remarkMath] });
+        const nextImages = new Set();
+        await resolveImages(result.root, nextImages);
         if (version !== contentVersion) return;
-        applyFoldState(nextRoot, 'root', folded);
+        const resolved = markmap.resolveViewOptions(baseOptions, { ...options, ...(result.frontmatter?.markmap || {}) });
         document.getElementById('custom-css').textContent = customCSS;
-        const documentOptions = result.frontmatter?.markmap || {};
-        await map.setData(nextRoot, { ...markmap.defaultOptions, ...markmap.deriveOptions({
-            maxWidth: 300, initialExpandLevel: -1, duration: 300, fitRatio: 0.95,
-            ...options, ...documentOptions,
-        }), scrollForPan: false });
-        root = map.state.data;
-        highlightedNode = undefined;
-        revealedNode = undefined;
-        resolvedImages = images;
+        map.setTree(result.root, resolved.options);
+        root = result.root;
+        currentContent = content;
+        images = nextImages;
+        highlighted = undefined;
         renderedDocument = { content, options, customCSS };
-        if (version !== contentVersion) return;
-        await selectLine(activeLine);
-        if (firstRender) { await map.fit(); firstRender = false; }
-        error.textContent = '';
+        selectLine(activeLine);
+        if (firstRender) { map.fit(); firstRender = false; }
+        error.textContent = resolved.warnings.join('\n');
     }
     function scheduleUpdates() {
         if (updatesScheduled) return;
@@ -274,20 +162,15 @@
             try {
                 while (pendingContent || pendingCursor !== undefined) {
                     if (pendingContent) {
-                        const latest = pendingContent;
-                        pendingContent = undefined;
+                        const latest = pendingContent; pendingContent = undefined;
                         try { await renderContent(latest); }
                         catch (e) { error.textContent = `Unable to render mind map: ${e.message}`; }
                     } else {
-                        const line = pendingCursor;
-                        pendingCursor = undefined;
-                        try { await selectLine(line, true); }
-                        catch (e) { console.error(e); }
+                        const line = pendingCursor; pendingCursor = undefined;
+                        try { selectLine(line, true); } catch (e) { console.error(e); }
                     }
                 }
-            } finally {
-                updatesScheduled = false;
-            }
+            } finally { updatesScheduled = false; }
         });
     }
     window.setMarkmapContent = (content, options = {}, customCSS = '') => {
@@ -296,58 +179,112 @@
     };
     window.setMarkmapCursor = line => {
         if (line === activeLine) return;
-        activeLine = line;
-        pendingCursor = line;
+        activeLine = line; pendingCursor = line;
         if (cursorFrame !== undefined) return;
-        cursorFrame = requestAnimationFrame(() => {
-            cursorFrame = undefined;
-            scheduleUpdates();
-        });
+        cursorFrame = requestAnimationFrame(() => { cursorFrame = undefined; scheduleUpdates(); });
     };
     window.centerMap = () => map.fit();
-    window.zoomIn = () => map.rescale(1.2);
-    window.zoomOut = () => map.rescale(1 / 1.2);
+    window.zoomIn = () => map.zoomIn();
+    window.zoomOut = () => map.zoomOut();
+    window.setFoldLevel = level => {
+        if (level !== null && (!Number.isInteger(level) || level < 0)) return;
+        rendering = rendering.then(() => {
+            if (!root) return;
+            if (level === null) map.expandAll(); else map.foldToLevel(level);
+            map.fit();
+        }).catch(e => console.error(e));
+    };
     window.toggleActive = recursive => {
-        rendering = rendering.then(() => active && map.toggleNode(active, recursive)).catch(e => console.error(e));
+        rendering = rendering.then(() => {
+            if (!active) return;
+            if (!recursive) map.toggle(active.id);
+            else {
+                const branches = [];
+                active.children?.forEach(child => walk(child, node => {
+                    if (node.children?.length) branches.push(node.id);
+                }));
+                if (!branches.length) {
+                    map.toggle(active.id);
+                } else if (map.foldedIds.has(active.id) || branches.every(id => map.foldedIds.has(id))) {
+                    map.expandAll(active.id);
+                } else {
+                    const folded = new Set(map.foldedIds);
+                    branches.forEach(id => folded.add(id));
+                    folded.delete(active.id);
+                    map.setFoldedIds(folded);
+                }
+            }
+        }).catch(e => console.error(e));
     };
-    window.exportSvg = () => {
-        rendering.then(() => {
-            const svg = map.svg.node().cloneNode(true);
-            svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-            const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-            style.textContent = [...document.querySelectorAll('style')].map(node => node.textContent).join('\n');
-            svg.prepend(style);
-            send({ type: 'svg', value: new XMLSerializer().serializeToString(svg) });
-        });
-    };
-    window.requestHtmlExport = () => rendering.then(() => send({
-        type: 'htmlReady', value: { ...renderedDocument, images: [...resolvedImages] },
-    }));
-    document.getElementById('markmap-svg').addEventListener('dblclick', event => {
-        const node = event.target.closest('.markmap-node');
-        const data = node && d3.select(node).datum();
-        const line = Number(String(data?.payload?.lines || '').split(',')[0]);
-        if (Number.isInteger(line) && data?.payload?.lines) send({ type: 'focus', value: line });
-    }, true);
-    document.getElementById('markmap-svg').addEventListener('click', event => {
-        const link = event.target.closest('a');
-        if (!link) return;
-        const href = link.getAttribute('href');
-        if (href?.startsWith('#')) {
-            event.preventDefault();
-            rendering = rendering.then(async () => {
-                const match = findHeading(href.slice(1));
-                if (!match) return;
-                match.parents.forEach(node => { if (node.payload?.fold) node.payload.fold = 0; });
-                await map.renderData();
-                active = match.node;
-                await map.setHighlight(active);
-                await map.ensureVisible(active);
-            }).catch(e => console.error(e));
-        } else if (href && window.markmapSend) {
-            event.preventDefault();
-            send({ type: 'link', value: href });
-        }
+    window.exportSvg = () => rendering.then(async () => {
+        if (!root || !map.result) return;
+        if (map.result.pending) { await map.result.pending; map.render({ animate: false }); }
+        const serialized = markmap.toSVGString(map.result, { colorScheme: map.options.colorScheme });
+        const documentSvg = new DOMParser().parseFromString(serialized, 'image/svg+xml');
+        const style = documentSvg.createElementNS('http://www.w3.org/2000/svg', 'style');
+        style.textContent = renderedDocument.customCSS;
+        documentSvg.documentElement.prepend(style);
+        send({ type: 'svg', value: new XMLSerializer().serializeToString(documentSvg.documentElement) });
     });
+    window.exportPng = () => rendering.then(async () => {
+        if (!root || !map.result) throw new Error('There is no mind map to export');
+        if (map.result.pending) { await map.result.pending; map.render({ animate: false }); }
+        const colorScheme = map.options.colorScheme === 'auto'
+            ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : map.options.colorScheme;
+        const blob = await markmap.toPNG(map.result, { background: true, colorScheme });
+        const value = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(',')[1]);
+            reader.onerror = () => reject(reader.error || new Error('Cannot read PNG image'));
+            reader.readAsDataURL(blob);
+        });
+        send({ type: 'png', value });
+    }).catch(e => send({ type: 'exportError', value: e.message || 'Cannot export PNG' }));
+    window.requestHtmlExport = () => rendering.then(() => send({
+        type: 'htmlReady', value: { ...renderedDocument, images: [...images] },
+    }));
+    function hit(event) { return map.hitAt(...map.layoutPoint(event.clientX, event.clientY)); }
+    svg.addEventListener('dblclick', event => {
+        const target = hit(event);
+        const id = event.target.closest('[data-key^="node:"]')?.getAttribute('data-node-id') || target?.nodeId;
+        if (!id) return;
+        let found;
+        walk(root, node => { if (node.id === id) found = node; });
+        const line = lineForNode(found);
+        if (line !== undefined) send({ type: 'focus', value: line });
+    }, true);
+    function openLink(href) {
+        if (href.startsWith('#')) {
+            let wanted;
+            try { wanted = decodeURIComponent(href.slice(1)).toLowerCase(); } catch (_) { return; }
+            let found;
+            function textOf(items) { return (items || []).map(item => item.value || item.alt || textOf(item.children)).join(''); }
+            walk(root, node => {
+                if (!found && node.type === 'heading' && textOf(node.content).trim().toLowerCase()
+                    .replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-') === wanted) found = node;
+            });
+            if (found) { active = found; highlighted = found.id; map.focusNode(found.id); markActive(); }
+        } else send({ type: 'link', value: href });
+    }
+    svg.addEventListener('click', event => {
+        const target = hit(event);
+        if (target?.nodeId && target.kind !== 'link' && target.kind !== 'action') {
+            let selected;
+            walk(root, node => { if (node.id === target.nodeId) selected = node; });
+            if (selected) { active = selected; highlighted = selected.id; markActive(); }
+        }
+        if (target?.kind !== 'link') return;
+        if (!hasBridge && !target.href.startsWith('#')) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        openLink(target.href);
+    }, true);
+    document.addEventListener('click', event => {
+        const link = event.target.closest('a[href]');
+        if (!link || svg.contains(link)) return;
+        if (!hasBridge && !link.getAttribute('href').startsWith('#')) return;
+        event.preventDefault(); event.stopPropagation();
+        openLink(link.getAttribute('href'));
+    }, true);
     send({ type: 'ready' });
 })();

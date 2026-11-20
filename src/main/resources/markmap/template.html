@@ -6,12 +6,9 @@
     <style>
         html, body, #markmap-svg { width: 100%; height: 100%; margin: 0; }
         body { background: __BACKGROUND__; color: __FOREGROUND__; font-family: system-ui, sans-serif; }
-        .markmap-svg text { fill: __FOREGROUND__; }
-        .markmap-svg .markmap-foreign { color: __FOREGROUND__; }
-        .markmap-node.active > circle { stroke: #4c9aff; stroke-width: 4px; }
+        .markmap-svg [data-markmap-active] text { text-decoration: underline; }
         #error { position: absolute; top: 1em; left: 1em; color: #d9534f; white-space: pre-wrap; }
     </style>
-    <style>__KATEX_CSS__</style>
     <style id="custom-css"></style>
 </head>
 <body>

@@ -9,11 +9,12 @@ Markmap Jet 是一款基于 [Markmap](https://markmap.js.org/) 的 JetBrains IDE
 ## 功能
 
 - 随 Markdown 编辑实时更新思维导图，支持拖动、缩放、适应画布和展开或折叠节点。
+- 通过工具栏的 Level 菜单快速选择显示深度（根节点为 Level 0），或展开全部节点。
 - 支持仅编辑、分屏和仅预览模式，跟随 IDE 的明暗主题。
 - 编辑器光标可同步到导图节点，双击节点可跳转到对应的 Markdown 源码。
-- 支持导出 SVG 和交互式 HTML，支持配置 Markmap 默认选项与自定义 CSS。
+- 支持从导出菜单保存 SVG、PNG 和交互式 HTML，支持配置 Markmap 默认选项与自定义 CSS。
 - 支持公式、代码高亮以及 Markdown 文件目录内的相对图片和链接。
-- 内置 Markmap、D3、KaTeX 等资源，基本预览无需 CDN 网络连接；外部链接和在线图片仍需要网络。
+- 内置 Markmap、D3、MathJax 等资源，基本预览无需 CDN 网络连接；外部链接和在线图片仍需要网络。
 
 ## 安装
 
@@ -25,15 +26,21 @@ Markmap Jet 是一款基于 [Markmap](https://markmap.js.org/) 的 JetBrains IDE
 2. 使用工具栏切换编辑、分屏或预览模式，拖动和缩放导图。
 3. 使用工具栏导出或打开 Markmap Settings；双击节点可跳转到对应源码。
 
-编辑器中可使用 `Alt+Shift+T` 切换当前节点的折叠状态，使用 `Alt+Shift+R` 递归切换。文档 YAML frontmatter 中的 `markmap` 选项可以覆盖默认配置，例如：
+点击导图中的节点可将其选为工具栏折叠按钮的目标；移动编辑器光标也会选择对应节点。没有子节点的节点无法折叠。编辑器中可使用 `Alt+Shift+T` 切换当前节点的折叠状态，使用 `Alt+Shift+R` 递归切换。
+
+普通折叠按钮只切换当前节点；递归按钮保留当前节点展开，并一次折叠或展开其下所有分支。如果当前节点已折叠，递归按钮会展开整个子树；如果下方没有可折叠的分支，则切换当前节点。
+
+文档 YAML frontmatter 中的 `markmap` 选项可以覆盖默认配置，例如：
 
 ```yaml
 ---
 markmap:
-  maxWidth: 300
-  initialExpandLevel: 2
+  wrapWidth: 350
+  foldLevel: 2
 ---
 ```
+
+默认的 `wrapWidth` 为 350 px，可在 Markmap Settings 或文档 frontmatter 中修改。Markmap 1.x 将段落、代码块和表格作为节点的备注显示；标题和列表项成为导图节点。`initialExpandLevel`、`maxWidth` 等 0.18 选项需要改为 `foldLevel`、`wrapWidth` 等 1.x 选项，详见[官方迁移说明](https://markmap.js.org/docs/migration)。原始 HTML 除单个图片标签外会被丢弃。
 
 本地相对图片和链接须位于 Markdown 文件所在目录或其子目录；绝对路径、向上遍历的路径以及指向目录外的符号链接不会被打开。导出 HTML 时，最大 10 MiB 的本地图片会被嵌入。
 

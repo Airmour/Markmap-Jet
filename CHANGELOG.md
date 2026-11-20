@@ -1,4 +1,14 @@
 ## Changelog
+### 1.0.7
+- Increase the default wrap width to 350 px and enlarge note markers and their click targets
+- Make recursive folding show the selected node's immediate children while folding or expanding all deeper branches
+- Group SVG, PNG, and HTML exports in one menu and add offline PNG export
+- Let folding controls use the clicked preview node and fix cursor selection on indented list items
+- Migrate the offline preview to Markmap 1.1.1, including MathJax formulas and the new node and options model
+- Add a Level menu for folding to a selected depth or expanding all nodes
+- Adapt source navigation, gestures, images, and exports to the 1.x renderer
+- Markdown paragraphs, tables, and code blocks are now notes; 0.18 options must be updated to their 1.x equivalents
+
 ### 1.0.6
 - Zoom the mind map with two-finger scrolling, with improved sensitivity
 - Reduce momentum zoom when supported by the embedded browser
