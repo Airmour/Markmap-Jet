@@ -25,8 +25,12 @@
         return parsedHtml;
     };
     const map = markmap.Markmap.create(document.getElementById('markmap-svg'), {
-        maxWidth: 300, initialExpandLevel: -1, duration: 300, fitRatio: 0.95,
+        maxWidth: 300, initialExpandLevel: -1, duration: 300, fitRatio: 0.95, scrollForPan: false,
     });
+    // Dampen momentum where the browser exposes it; preserve pinch-wheel scaling.
+    map.zoom.wheelDelta(event => -event.deltaY
+        * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002)
+        * (event.ctrlKey ? 10 : event.momentum === true ? 1.2 : 2.4));
 
     const svgElement = document.getElementById('markmap-svg');
     let viewportFrame;
@@ -252,7 +256,7 @@
         await map.setData(nextRoot, { ...markmap.defaultOptions, ...markmap.deriveOptions({
             maxWidth: 300, initialExpandLevel: -1, duration: 300, fitRatio: 0.95,
             ...options, ...documentOptions,
-        }) });
+        }), scrollForPan: false });
         root = map.state.data;
         highlightedNode = undefined;
         revealedNode = undefined;

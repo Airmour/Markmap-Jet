@@ -1,4 +1,9 @@
 ## Changelog
+### 1.0.6
+- Zoom the mind map with two-finger scrolling, with improved sensitivity
+- Reduce momentum zoom when supported by the embedded browser
+- Update markmap-view to 0.18.13
+
 ### 1.0.5
 - Forward native macOS trackpad pinch gestures to the preview, preserving the zoom anchor
 - Apply two-finger pan events immediately and interrupt competing viewport animations

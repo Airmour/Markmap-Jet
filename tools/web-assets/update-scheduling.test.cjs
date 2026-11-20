@@ -32,7 +32,7 @@ async function harness() {
     clientWidth: 1000, clientHeight: 600,
     addEventListener(type, handler) { listeners[type] = handler; },
   } };
-  const context = { console, navigator: { userAgent: 'node' }, document: {} };
+  const context = { console, navigator: { userAgent: 'Macintosh' }, document: {} };
   context.window = context;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(assets, 'vendor/markmap-bundle.js'), 'utf8'), context);
@@ -48,12 +48,12 @@ async function harness() {
     transform(...args) { stats.transforms++; return super.transform(...args); }
   }
   const map = { options: { zoom: true, pan: true, scrollForPan: true }, state: {}, g: { selectAll: () => ({ remove() {} }) },
-    async setData(root) { stats.commits.push(root); this.state.data = root; if (this.pause) await this.pause; },
+    async setData(root, options) { Object.assign(this.options, options); stats.commits.push(root); this.state.data = root; if (this.pause) await this.pause; },
     async setHighlight() { stats.highlights++; }, async ensureVisible() { stats.reveals++; },
     async fit() {}, async renderData() {}, async toggleNode() {}, rescale() {},
   };
   map.svg = { node: () => nodes['markmap-svg'], interrupt() { return this; }, call(fn, value) { fn(this, value); return this; } };
-  map.zoom = { scaleExtent: () => [0, Infinity], transform(selection, value) {
+  map.zoom = { wheelDelta(fn) { this.getWheelDelta = fn; return this; }, scaleExtent: () => [0, Infinity], transform(selection, value) {
     stats.viewportUpdates++;
     nodes['markmap-svg'].__zoom = value;
   } };
@@ -67,7 +67,7 @@ async function harness() {
         get textContent() { return $.text(); },
         querySelectorAll: selector => $(selector).toArray().map(n => element($, n)) };
     } },
-    markmap: { ...context.markmap, Transformer, Markmap: { create: () => map } },
+    markmap: { ...context.markmap, Transformer, Markmap: { create: (_, options) => { Object.assign(map.options, options); return map; } } },
   });
   vm.runInContext(fs.readFileSync(path.join(assets, 'app.js'), 'utf8'), context);
   async function exported() {
@@ -85,11 +85,16 @@ async function harness() {
 const descendants = node => [node, ...(node.children || []).flatMap(descendants)];
 (async () => {
   const h = await harness();
+  assert.equal(h.map.options.scrollForPan, false, 'Scrolling must zoom on initial map creation');
+  assert.equal(h.map.zoom.getWheelDelta({ deltaY: 10, deltaMode: 0, ctrlKey: false }), -0.048);
+  assert.equal(h.map.zoom.getWheelDelta({ deltaY: 10, deltaMode: 0, ctrlKey: false, momentum: true }), -0.024);
+  assert.equal(h.map.zoom.getWheelDelta({ deltaY: 10, deltaMode: 0, ctrlKey: true }), -0.2);
   const mixed = '---\nmarkmap:\n  maxWidth: 125\n---\n# Root\n## Mixed\n1. First\n- Second\n```python\nprint(1)\n```\n```python\nprint(2)\n```';
   h.context.setMarkmapContent('# Superseded one');
   h.context.setMarkmapContent('# Superseded two');
   h.context.setMarkmapContent(mixed);
   assert.equal((await h.exported()).content, mixed);
+  assert.equal(h.map.options.scrollForPan, false, 'Rendering must preserve scroll-to-zoom');
   assert.equal(h.stats.transforms, 1);
   assert.equal(h.stats.parses, 1, 'Each content update must render Markdown once');
   const heading = descendants(h.map.state.data).find(n => n.content === 'Mixed');
@@ -138,6 +143,7 @@ const descendants = node => [node, ...(node.children || []).flatMap(descendants)
   assert.equal(h.map.state.data, undefined);
   // Trackpad updates preserve the anchor, use absolute gesture scale, and apply wheel input immediately.
   const g = await harness();
+  g.map.options.scrollForPan = true; // Exercise the optional pan handler independently.
   const wheel = (extra = {}) => ({ ctrlKey: false, deltaX: 0.2, deltaY: 0.1, deltaMode: 0,
     prevented: false, stopped: false,
     preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...extra });

@@ -6,7 +6,7 @@
     "highlight.js": "11.11.1",
     "katex": "^0.19.1",
     "markmap-lib": "^0.18.12",
-    "markmap-view": "^0.18.12"
+    "markmap-view": "^0.18.13"
   },
   "devDependencies": {
     "playwright-core": "1.55.1"
